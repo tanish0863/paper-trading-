@@ -1,1 +1,37 @@
-
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NSE Paper Trading</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📈 NSE Paper Trading</h1>
+        <div class="balance">Balance: ₹<span id="balance">10,000</span></div>
+        
+        <div class="order-panel">
+            <h3>Place Bracket Order</h3>
+            <input type="text" id="stockSymbol" placeholder="NSE Symbol (e.g., RELIANCE)">
+            <input type="number" id="shares" placeholder="Shares" min="1">
+            <input type="number" id="takeProfit" placeholder="Take Profit %">
+            <input type="number" id="stopLoss" placeholder="Stop Loss %">
+            <button onclick="placeOrder()">Place Order</button>
+        </div>
+        
+        <div class="portfolio">
+            <h3>Your Portfolio</h3>
+            <table id="portfolioTable">
+                <tr>
+                    <th>Stock</th>
+                    <th>Shares</th>
+                    <th>Buy Price (₹)</th>
+                    <th>Take Profit (₹)</th>
+                    <th>Stop Loss (₹)</th>
+                    <th>Action</th>
+                </tr>
+            </table>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
