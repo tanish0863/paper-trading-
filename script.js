@@ -1,47 +1,57 @@
-// Initialize balance and portfolio (saved in browser)
-let balance = localStorage.getItem('paperBalance') || 10000;
-let portfolio = JSON.parse(localStorage.getItem('paperPortfolio')) || [];
+// Initialize with ₹10,000 balance
+let balance = 10000;
+let portfolio = JSON.parse(localStorage.getItem('portfolio')) || [];
 
-// Fetch NSE stock price (using Yahoo Finance API)
-async function getNSEPrice(symbol) {
+// DOM Elements
+const balanceEl = document.getElementById('balance');
+const symbolInput = document.getElementById('stockSymbol');
+const sharesInput = document.getElementById('shares');
+const portfolioTable = document.getElementById('portfolioTable');
+
+// Update UI on load
+updateUI();
+
+// Fetch REAL-TIME NSE price (using Yahoo Finance API)
+async function getLivePrice(symbol) {
     try {
-        const response = await fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?interval=1m`
-        );
+        const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?interval=1m`);
         const data = await response.json();
-        return data.chart.result[0].meta.regularMarketPrice;
+        return data.chart.result[0].meta.regularMarketPrice.toFixed(2);
     } catch (error) {
-        console.error("Failed to fetch price:", error);
+        console.error("Error fetching price:", error);
         return null;
     }
 }
 
-// Place bracket order
+// Place order with exact price values
 async function placeOrder() {
-    const symbol = document.getElementById('stockSymbol').value.toUpperCase();
-    const shares = parseInt(document.getElementById('shares').value);
-    const takeProfitPct = parseFloat(document.getElementById('takeProfit').value);
-    const stopLossPct = parseFloat(document.getElementById('stopLoss').value);
-
-    if (!symbol || !shares || !takeProfitPct || !stopLossPct) {
-        alert("Please fill all fields!");
+    const symbol = symbolInput.value.trim().toUpperCase();
+    const shares = parseInt(sharesInput.value);
+    
+    if (!symbol || !shares) {
+        alert("Please enter both stock symbol and shares");
         return;
     }
 
-    // Fetch real-time price
-    const buyPrice = await getNSEPrice(symbol);
-    if (!buyPrice) {
-        alert("Invalid NSE symbol or API error.");
+    // Get LIVE price
+    const currentPrice = await getLivePrice(symbol);
+    if (!currentPrice) {
+        alert("Could not fetch price. Check symbol or try later.");
         return;
     }
 
-    // Calculate TP/SL prices
-    const takeProfitPrice = buyPrice * (1 + takeProfitPct / 100);
-    const stopLossPrice = buyPrice * (1 - stopLossPct / 100);
-    const totalCost = shares * buyPrice;
+    // Get TP/SL prices from user (modified HTML needed)
+    const takeProfit = parseFloat(prompt(`Enter Take Profit Price (Current: ₹${currentPrice})`));
+    const stopLoss = parseFloat(prompt(`Enter Stop Loss Price (Current: ₹${currentPrice})`));
+    
+    if (!takeProfit || !stopLoss) {
+        alert("Both Take Profit and Stop Loss prices are required");
+        return;
+    }
 
+    const totalCost = shares * currentPrice;
     if (totalCost > balance) {
-        alert("Not enough balance!");
+        alert(`Insufficient balance. Needed: ₹${totalCost.toFixed(2)}`);
         return;
     }
 
@@ -49,69 +59,73 @@ async function placeOrder() {
     portfolio.push({
         symbol: `${symbol}.NS`,
         shares,
-        buyPrice,
-        takeProfitPrice,
-        stopLossPrice,
+        buyPrice: parseFloat(currentPrice),
+        takeProfit,
+        stopLoss,
         status: 'Active'
     });
 
     // Update balance and save
     balance -= totalCost;
-    localStorage.setItem('paperBalance', balance);
-    localStorage.setItem('paperPortfolio', JSON.stringify(portfolio));
+    localStorage.setItem('portfolio', JSON.stringify(portfolio));
+    localStorage.setItem('balance', balance);
     updateUI();
-
-    // Send email notification (Step 4)
-    sendEmail(symbol, shares, buyPrice, takeProfitPrice, stopLossPrice);
+    alert(`Order placed for ${shares} shares of ${symbol} at ₹${currentPrice}`);
 }
 
-// Render portfolio
+// Update portfolio table
 function updateUI() {
-    document.getElementById('balance').textContent = balance.toLocaleString();
-    const table = document.getElementById('portfolioTable');
-    while (table.rows.length > 1) table.deleteRow(1);
+    balanceEl.textContent = balance.toFixed(2);
+    
+    // Clear existing rows (except header)
+    while (portfolioTable.rows.length > 1) {
+        portfolioTable.deleteRow(1);
+    }
 
-    portfolio.forEach((trade, index) => {
-        const row = table.insertRow();
+    // Add portfolio items
+    portfolio.forEach((item, index) => {
+        const row = portfolioTable.insertRow();
         row.innerHTML = `
-            <td>${trade.symbol}</td>
-            <td>${trade.shares}</td>
-            <td>${trade.buyPrice.toFixed(2)}</td>
-            <td>${trade.takeProfitPrice.toFixed(2)}</td>
-            <td>${trade.stopLossPrice.toFixed(2)}</td>
+            <td>${item.symbol}</td>
+            <td>${item.shares}</td>
+            <td>₹${item.buyPrice.toFixed(2)}</td>
+            <td>₹${item.takeProfit.toFixed(2)}</td>
+            <td>₹${item.stopLoss.toFixed(2)}</td>
             <td><button onclick="sellStock(${index})">Sell</button></td>
         `;
     });
 }
 
-// Initialize
-updateUI();
-// Check prices every 30 seconds
+// Sell stock
+async function sellStock(index) {
+    const stock = portfolio[index];
+    const currentPrice = await getLivePrice(stock.symbol.replace('.NS', ''));
+    
+    if (!currentPrice) {
+        alert("Could not fetch current price");
+        return;
+    }
+
+    const profit = (currentPrice - stock.buyPrice) * stock.shares;
+    balance += currentPrice * stock.shares;
+    
+    portfolio.splice(index, 1);
+    localStorage.setItem('portfolio', JSON.stringify(portfolio));
+    localStorage.setItem('balance', balance);
+    
+    updateUI();
+    alert(`Sold ${stock.symbol} at ₹${currentPrice}. ${profit >= 0 ? 'Profit' : 'Loss'}: ₹${Math.abs(profit).toFixed(2)}`);
+}
+
+// Auto-check prices every 30 seconds
 setInterval(async () => {
     for (let i = 0; i < portfolio.length; i++) {
-        const trade = portfolio[i];
-        const currentPrice = await getNSEPrice(trade.symbol.replace('.NS', ''));
+        const stock = portfolio[i];
+        const currentPrice = await getLivePrice(stock.symbol.replace('.NS', ''));
         
-        if (currentPrice >= trade.takeProfitPrice || currentPrice <= trade.stopLossPrice) {
-            sellStock(i, currentPrice);
+        if (currentPrice >= stock.takeProfit || currentPrice <= stock.stopLoss) {
+            await sellStock(i);
         }
     }
-}, 30000); // 30 seconds
-
-function sendEmail(symbol, shares, buyPrice, takeProfitPrice, stopLossPrice) {
-    // Initialize EmailJS (replace with your IDs)
-    emailjs.init("9-OYwpxP8weW2Wz6x");
-    
-    emailjs.send("service_isx8vs1", "template_roequ0k", {
-        symbol: symbol,
-        shares: shares,
-        buyPrice: buyPrice.toFixed(2),
-        takeProfit: takeProfitPrice.toFixed(2),
-        stopLoss: stopLossPrice.toFixed(2),
-        recipient: "tanishmodgekar@gmail.com" // User's email (hardcode or prompt)
-    }).then(() => {
-        console.log("Email sent!");
-    }, (error) => {
-        console.error("Email failed:", error);
-    });
-}
+}, 30000);
+  
